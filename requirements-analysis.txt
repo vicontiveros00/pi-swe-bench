@@ -1,0 +1,4 @@
+# For analyze.ipynb only (the benchmark runner itself needs no packages).
+pandas>=2.0
+matplotlib>=3.7
+jupyterlab>=4.0
