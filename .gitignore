@@ -1,4 +1,2 @@
-__pycache__/
-*.pyc
-results/
-_mockbin/
+.DS_Store
+.ipynb_checkpoints/

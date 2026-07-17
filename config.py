@@ -1,42 +1,49 @@
 """Benchmark configuration.
 
-IMPORTANT — model selection (this is what bit the first run):
-Pi's `--model` takes a PATTERN matched against a model's `id`/`name`, NOT a
-`provider/model` string. Passing something that matches nothing makes Pi fall
-back to its `defaultModel` (e.g. gemma) and silently benchmark the wrong model.
+MODEL SELECTION (confirmed against a live LM Studio setup):
+Pi selects models as `provider/model` and requires auth even for local servers.
+For LM Studio you need BOTH:
+  1. the provider prefix on the id  -> "lmstudio/gpt-oss-20b@f16"
+  2. an api key for the provider    -> PI_API_KEY below (or `/login`)
 
-So `pi_model` below must be the model id exactly as `pi --list-models` prints it
-(the LM Studio API identifier, e.g. `gpt-oss-20b@f16`) — no `lmstudio/` prefix.
-
-Pi also hides local models behind auth: a keyless LM Studio provider stays
-"unavailable" for `--model` unless the provider has a dummy apiKey, you've run
-`/login`, or you pass `--api-key`. PI_API_KEY below covers that last option.
-Verify everything with:  pi --list-models
+Without the prefix, Pi guesses a provider (e.g. huggingface) and fails; without
+the key it 401s or silently falls back to its defaultModel (that's the gemma load
+we hit). Get the exact ids from `pi --list-models` and keep the `lmstudio/` prefix.
+The pre-run preflight actually probes each model, so a bad id/key aborts early.
 """
 
 # --- Pi invocation --------------------------------------------------------
 PI_BIN = "pi"
 
-# Flag used to select a model per run. Pi uses `--model <pattern>`.
+# Pi selects a model with `--model <provider/model>`.
 PI_MODEL_ARGS = ["--model"]
 
-# Dummy key so keyless LM Studio models are selectable in non-interactive mode.
-# Set to None if your lmstudio provider already has an apiKey in models.json or
-# you've authenticated with `/login`.
+# Auth for the (keyless) LM Studio provider so its models are selectable.
+# Set to None only if you've run `/login` for the lmstudio provider instead.
 PI_API_KEY = "lmstudio"
 
-# Print mode (non-interactive), ephemeral session, auto-trust the project dir so
-# any project-local resources load without a prompt.
+# Print mode (non-interactive), ephemeral session, auto-trust the project dir.
 PI_BASE_ARGS = ["-p", "--no-session", "-a"]
 
-PI_TIMEOUT = 900     # seconds allowed for one task attempt (the agent may iterate)
+PI_TIMEOUT = 120        # seconds per task attempt (the agent may iterate)
+PREFLIGHT_TIMEOUT = 120 # seconds for the preflight probe (may JIT-load the model)
+
+# LM Studio REST endpoint (the "Reachable at" address in LM Studio). If set, the
+# preflight asks LM Studio which model actually loaded after each probe and FAILS
+# if it isn't the one you asked for — this is what catches Pi silently falling back
+# to its default model (e.g. gemma) when an id doesn't resolve. Set to None to skip.
+LMSTUDIO_URL = "http://172.20.10.7:1234"
 
 # --- models under test ----------------------------------------------------
-# `pi_model` = model id EXACTLY as `pi --list-models` shows it (no provider prefix).
+# `pi_model` = provider-prefixed id EXACTLY as it works with `pi --model`.
 # `name`     = short label used in the report and results dir.
 MODELS = [
-    {"name": "gpt-oss-20b", "pi_model": "gpt-oss-20b"},
-    {"name": "qwen3.5-9b",  "pi_model": "qwen/qwen3.5-9b"},
+    {"name": "gpt-oss-20b", "pi_model": "lmstudio/gpt-oss-20b"},
+    # {"name": "qwen3.5-9b",  "pi_model": "lmstudio/qwen/qwen3.5-9b"},
+    # {"name": "gemma-4-e2b",  "pi_model": "lmstudio/gemma-4-e2b-it"},
+    # {"name": "deepseek-coder-v2-lite",  "pi_model": "lmstudio/deepseek-coder-v2-lite-instruct-awq"},
+    # {"name": "devstral-small-2-2512",  "pi_model": "lmstudio/mistralai/devstral-small-2-2512"},
+    {"name": "qwythos-9b-claude-mythos-5-1m",  "pi_model": "lmstudio/qwythos-9b-claude-mythos-5-1m"},
 ]
 
 # --- run / grading --------------------------------------------------------

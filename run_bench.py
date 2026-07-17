@@ -36,6 +36,7 @@ import statistics
 import subprocess
 import tempfile
 import time
+import urllib.request
 from collections import defaultdict
 
 import config
@@ -84,38 +85,74 @@ def pi_prefix():
     return [config.PI_BIN, *config.PI_BASE_ARGS] + (["--api-key", key] if key else [])
 
 
-def preflight(models):
-    """Verify each configured model is actually selectable before running.
-
-    Pi silently falls back to its defaultModel when --model matches nothing, so a
-    wrong id means you benchmark the wrong model (e.g. gemma) without any error.
-    We run `pi --list-models` and check each pi_model id appears in the output.
-    Returns True if all present; prints guidance and returns False otherwise.
-    """
-    key = getattr(config, "PI_API_KEY", None)
-    cmd = [config.PI_BIN, "--list-models"] + (["--api-key", key] if key else [])
+def lmstudio_loaded_ids(url, timeout=10):
+    """Ask LM Studio which models are currently loaded. Returns a list of ids, or
+    None if the endpoint can't be reached / doesn't support the query."""
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    except FileNotFoundError:
-        raise SystemExit(f"Could not run '{config.PI_BIN}'. Is Pi installed and on PATH?")
-    except subprocess.TimeoutExpired:
-        print("preflight: `pi --list-models` timed out; skipping check.")
-        return True
-    listing = out.stdout + out.stderr
-    missing = [m for m in models if m["pi_model"] not in listing]
+        with urllib.request.urlopen(url.rstrip("/") + "/api/v0/models", timeout=timeout) as r:
+            data = json.loads(r.read())
+    except Exception:
+        return None
+    loaded = []
+    for m in data.get("data", []):
+        state = str(m.get("state", "")).lower()
+        if "loaded" in state and "not" not in state:  # "loaded" / "loaded-idle"
+            loaded.append(m.get("id", ""))
+    return loaded
+
+
+def model_token(pi_model):
+    """Distinctive part of an id for matching against LM Studio's loaded id:
+    drop the provider prefix and any @quant suffix. 'lmstudio/gpt-oss-20b@f16' -> 'gpt-oss-20b'."""
+    return pi_model.split("/")[-1].split("@")[0].lower()
+
+
+def preflight(models):
+    """Probe each model with a tiny prompt to confirm Pi can actually SELECT and
+    REACH it, then (if config.LMSTUDIO_URL is set) confirm LM Studio loaded the
+    model we asked for rather than silently falling back to its default.
+    """
+    probe = "Reply with the single word READY and nothing else."
+    url = getattr(config, "LMSTUDIO_URL", None)
+    ok_all = True
     for m in models:
-        status = "missing/unavailable" if m in missing else "ok"
-        print(f"  preflight {m['name']:<12} {m['pi_model']:<24} {status}")
-    if missing:
-        print("\nThese model ids are not selectable via `pi --list-models`.")
-        print("Fix before running, or Pi will fall back to its default model:")
-        print("  1. Run `pi --list-models` and copy the EXACT id into config.MODELS.")
-        print("  2. If the id is listed but unavailable, it's auth: give the lmstudio")
-        print("     provider a dummy apiKey in ~/.pi/agent/models.json, or set")
-        print("     config.PI_API_KEY (currently "
-              f"{getattr(config, 'PI_API_KEY', None)!r}).")
-        print("  3. Re-run, or pass --no-check to skip this guard.")
-    return not missing
+        cmd = pi_prefix() + [*config.PI_MODEL_ARGS, m["pi_model"], probe]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True,
+                               timeout=getattr(config, "PREFLIGHT_TIMEOUT", 240))
+        except FileNotFoundError:
+            raise SystemExit(f"Could not run '{config.PI_BIN}'. Is Pi installed and on PATH?")
+        except subprocess.TimeoutExpired:
+            print(f"  preflight {m['name']:<12} {m['pi_model']:<28} slow (model load?) — assuming ok")
+            continue
+        out = (r.stdout + r.stderr).strip()
+        bad = (r.returncode != 0
+               or not out
+               or any(s in out for s in ("No API key", "API key", "401", "Invalid", "not found")))
+        reason = "" if not bad else f"pi said: {out.splitlines()[-1] if out else '(no output)'}"
+
+        # Cross-check: did LM Studio load what we asked for, or fall back?
+        if not bad and url:
+            loaded = lmstudio_loaded_ids(url)
+            if loaded is not None:
+                token = model_token(m["pi_model"])
+                if not any(token in x.lower() for x in loaded):
+                    bad = True
+                    reason = (f"asked for {m['pi_model']} but LM Studio loaded {loaded or '[none]'} "
+                              "— Pi fell back to a different model")
+
+        print(f"  preflight {m['name']:<12} {m['pi_model']:<28} {'FAILED' if bad else 'ok'}")
+        if bad:
+            ok_all = False
+            print(f"      {reason}")
+    if not ok_all:
+        print("\nA model could not be selected/reached (or Pi fell back). Fixes:")
+        print("  - Run `pi --list-models` and copy the EXACT gpt-oss id (the @quant tag or")
+        print("    the model may differ from what's in config.MODELS, or it isn't downloaded).")
+        print("  - Keep the provider prefix, e.g. 'lmstudio/<id>'.")
+        print("  - Keyless LM Studio needs auth: config.PI_API_KEY (e.g. 'lmstudio') or `/login`.")
+        print("  - Re-run, or pass --no-check to skip this probe.")
+    return ok_all
 
 
 def run_pi(pi_model, prompt, ws):
@@ -161,7 +198,7 @@ def main():
     models = [m for m in config.MODELS if args.model is None or m["name"] == args.model]
 
     if not args.no_check:
-        print("preflight: checking models resolve via `pi --list-models`...")
+        print("preflight: probing each model (a tiny prompt; may load the model)...")
         if not preflight(models):
             raise SystemExit(1)
     # keep guidance runs in separate artifact trees so they don't clobber each other
