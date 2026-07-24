@@ -37,14 +37,16 @@ PUBLIC = {
     "compare_versions": 'assert solution.compare_versions("1.2.1", "1.2") == 1',
     "merge_intervals":  'assert solution.merge_intervals([[1,2],[2,3]]) == [[1,3]]',
     "roman_to_int":     'assert solution.roman_to_int("IV") == 4',
+    # Tier 6 (multi-file): public reproductions import the entry module themselves.
+    "cart_totals":      'import cart as C\nc = C.Cart()\nc.add("widget", 19.99)\nc.apply_coupon(10)\nassert c.total_cents() == 1799',
+    "event_bus":        'import bus as B\ncalls = []\nbus = B.EventBus()\nt1 = bus.subscribe("n", lambda p: calls.append("a") or "a")\nt2 = bus.subscribe("n", lambda p: calls.append("b") or "b")\nbus.unsubscribe(t1)\nassert bus.publish("n", 1) == ["b"]',
+    "paginate":         'import service as S\nr = S.paginate(list(range(13)), 3, 5)\nassert r["pages"] == 3\nassert r["items"] == [10, 11, 12]',
 }
 
 TEST_TEMPLATE = '''import sys
 import traceback
 
-import solution
-
-
+{imports}
 def run():
 {body}
 
@@ -59,9 +61,36 @@ if __name__ == "__main__":
     print("PASS")
 '''
 
-def make_test(check_src):
-    body = textwrap.indent(textwrap.dedent(check_src).strip("\n").replace("mod.", "solution."), "    ")
-    return TEST_TEMPLATE.format(body=body)
+def make_test(check_src, entry_module="solution"):
+    # Hidden/public checks are authored against `mod.`. Single-file tasks rewrite
+    # that to `solution.` and inject `import solution`. Multi-file tasks (tier 6)
+    # already `import <module>` explicitly inside the check body, so we leave the
+    # body untouched and inject no top-level import.
+    src = textwrap.dedent(check_src).strip("\n")
+    multi = entry_module != "solution"
+    if not multi:
+        src = src.replace("mod.", "solution.")
+    body = textwrap.indent(src, "    ")
+    imports = "" if multi else "import solution\n\n"
+    return TEST_TEMPLATE.format(body=body, imports=imports)
+
+
+def normalize(task):
+    """Return (files, reference_files, entry_module) for a task in either shape.
+
+    Single-file tasks carry `buggy`/`reference` strings; multi-file (tier 6)
+    tasks carry `files`/`reference_files` dicts. Collapse both to file dicts
+    keyed by filename so the rest of the generator is shape-agnostic.
+    """
+    entry = task.get("entry_module", "solution")
+    if "files" in task:
+        files = {fn: textwrap.dedent(src).strip("\n") for fn, src in task["files"].items()}
+        ref = {fn: textwrap.dedent(src).strip("\n")
+               for fn, src in task["reference_files"].items()}
+    else:
+        files = {entry + ".py": textwrap.dedent(task["buggy"]).strip("\n")}
+        ref = {entry + ".py": textwrap.dedent(task["reference"]).strip("\n")}
+    return files, ref, entry
 
 
 def write(path, content):
@@ -75,21 +104,31 @@ def main():
     for i, t in enumerate(TASKS, 1):
         slug = t["name"]
         d = f"{i:02d}_{slug}"
+        files, ref_files, entry = normalize(t)
+        multi = entry != "solution"
 
-        write(os.path.join(ROOT, "tasks", d, "solution.py"),
-              textwrap.dedent(t["buggy"]).strip("\n"))
+        # Buggy starter repo: every file the task ships (one file for tiers 1-5).
+        for fn, src in files.items():
+            write(os.path.join(ROOT, "tasks", d, fn), src)
         write(os.path.join(ROOT, "tasks", d, "test_public.py"),
-              make_test(PUBLIC[slug]))
+              make_test(PUBLIC[slug], entry))
         write(os.path.join(ROOT, "tasks", d, "PROMPT.md"),
-              build_prompt("standard", t["title"], t["spec"], t["entrypoint"]))
+              build_prompt("standard", t["title"], t["spec"], t["entrypoint"],
+                           editable=t.get("editable", list(files.keys()))))
         write(os.path.join(ROOT, "grading", d, "test_hidden.py"),
-              make_test(t["check"]))
-        write(os.path.join(ROOT, "reference", d, "solution.py"),
-              textwrap.dedent(t["reference"]).strip("\n"))
+              make_test(t["check"], entry))
+        # Reference repo (validate.py only): mirror every buggy file's fixed form.
+        for fn, src in ref_files.items():
+            write(os.path.join(ROOT, "reference", d, fn), src)
 
+        entry_name = entry if multi else "solution"
+        editable = t.get("editable", list(files.keys()) if multi else ["solution.py"])
         manifest.append({
             "id": slug, "dir": d, "tier": t["tier"],
             "title": t["title"], "entrypoint": t["entrypoint"],
+            "entry_module": entry_name,
+            "files": sorted(files.keys()),
+            "editable": editable,
             "spec": t["spec"].strip(),
         })
 

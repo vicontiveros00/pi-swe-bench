@@ -5,6 +5,13 @@
     "tier": 1,
     "title": "Split list into chunks",
     "entrypoint": "chunk_list",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "chunk_list(lst, n) splits lst into consecutive chunks of size n. The final chunk may be shorter. Failing: chunk_list([1,2,3,4,5], 2) should be [[1,2],[3,4],[5]] but the buggy version drops [5]."
   },
   {
@@ -13,6 +20,13 @@
     "tier": 1,
     "title": "Clamp a value to a range",
     "entrypoint": "clamp",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "clamp(x, lo, hi) returns x limited to [lo, hi]. Failing: clamp(5, 0, 10) should return 5 but returns 10."
   },
   {
@@ -21,6 +35,13 @@
     "tier": 1,
     "title": "Arithmetic mean",
     "entrypoint": "mean",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "mean(nums) returns the arithmetic mean as a float. Failing: mean([1,2]) should be 1.5 but the buggy version returns 1."
   },
   {
@@ -29,6 +50,13 @@
     "tier": 2,
     "title": "First element or None",
     "entrypoint": "safe_head",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "safe_head(lst) returns the first element, or None if lst is empty. Failing: safe_head([]) should return None but raises IndexError."
   },
   {
@@ -37,6 +65,13 @@
     "tier": 2,
     "title": "Binary search index",
     "entrypoint": "binary_search",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "binary_search(arr, target) on an ascending sorted list returns the index of target, else -1. Failing: binary_search([1,3,5,7], 7) should return 3 but returns -1."
   },
   {
@@ -45,6 +80,13 @@
     "tier": 2,
     "title": "Percent change, guard div-by-zero",
     "entrypoint": "percent_change",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "percent_change(old, new) returns the percent change from old to new, or None if old is 0. Failing: percent_change(0, 5) should return None but raises ZeroDivisionError."
   },
   {
@@ -53,6 +95,13 @@
     "tier": 3,
     "title": "Mutable default argument",
     "entrypoint": "collect",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "collect(item) with no bucket should return a fresh list with only item. Failing: collect(1) then collect(2) - the second call should return [2], but the buggy version returns [1,2] because it reuses one default list."
   },
   {
@@ -61,6 +110,13 @@
     "tier": 3,
     "title": "Dedupe without mutating input",
     "entrypoint": "dedupe",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "dedupe(lst) returns a NEW list with duplicates removed, preserving first-occurrence order, WITHOUT modifying the input. Failing: dedupe([1,2,1,3,2]) should return [1,2,3] and leave the input unchanged; the buggy version mutates the input and returns wrong results."
   },
   {
@@ -69,6 +125,13 @@
     "tier": 3,
     "title": "Round halves up (not banker's)",
     "entrypoint": "round_half_up",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "round_half_up(x) rounds to the nearest integer, rounding halves UP. Failing: round_half_up(0.5) should be 1 and round_half_up(2.5) should be 3, but Python's round() uses banker's rounding and returns 0 and 2."
   },
   {
@@ -77,6 +140,13 @@
     "tier": 4,
     "title": "LRU cache recency on get",
     "entrypoint": "LRUCache",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "LRUCache(capacity) with get/put. get returns the value or -1 and must mark the key as most-recently-used; put evicts the least-recently-used key when full. Failing: after put(1,1), put(2,2), get(1), put(3,3) - key 2 should be evicted (1 was just used), but the buggy version evicts 1 because get doesn't update recency."
   },
   {
@@ -85,6 +155,13 @@
     "tier": 4,
     "title": "Undo reverses a deposit",
     "entrypoint": "Ledger",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "Ledger with deposit(amt) and undo(). undo() reverses the most recent deposit (subtracts it) and is a no-op with no history. Failing: after deposit(100), deposit(50), undo() the balance should be 100 but the buggy version gives 200."
   },
   {
@@ -93,6 +170,13 @@
     "tier": 5,
     "title": "Compare dotted versions",
     "entrypoint": "compare_versions",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "compare_versions(a, b) compares dotted numeric version strings and returns -1, 0 or 1. Shorter versions are zero-padded; components are compared numerically (so '10' > '2'). Failing: compare_versions('1.2.1', '1.2') should return 1 but the buggy version returns 0 because it ignores the trailing component."
   },
   {
@@ -101,6 +185,13 @@
     "tier": 5,
     "title": "Merge overlapping/touching intervals",
     "entrypoint": "merge_intervals",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "merge_intervals(intervals) merges overlapping AND touching intervals ([1,2] and [2,3] merge into [1,3]) and returns them sorted as [start,end] lists. Failing: merge_intervals([[1,2],[2,3]]) should return [[1,3]] but the buggy version returns [[1,2],[2,3]]."
   },
   {
@@ -109,6 +200,64 @@
     "tier": 5,
     "title": "Roman numeral to int",
     "entrypoint": "roman_to_int",
+    "entry_module": "solution",
+    "files": [
+      "solution.py"
+    ],
+    "editable": [
+      "solution.py"
+    ],
     "spec": "roman_to_int(s) converts a Roman numeral to an integer, handling subtractive pairs (IV=4, IX=9, XL=40, ...). Failing: roman_to_int('IV') should return 4 but the buggy version returns 6."
+  },
+  {
+    "id": "cart_totals",
+    "dir": "15_cart_totals",
+    "tier": 6,
+    "title": "Cart total is wrong after applying a coupon",
+    "entrypoint": "Cart",
+    "entry_module": "cart",
+    "files": [
+      "cart.py",
+      "pricing.py"
+    ],
+    "editable": [
+      "cart.py",
+      "pricing.py"
+    ],
+    "spec": "A Cart holds items priced in dollars and can apply a whole-percent coupon. total_cents() must equal the subtotal minus a coupon discount that is rounded HALF-UP to the nearest cent (standard retail rounding), never truncated. Failing: a cart with one item at $19.99 and a 10% coupon should total 1799 cents ($17.99) \u2014 discount 199.9\u2192200 cents rounded half-up \u2014 but it returns 1800."
+  },
+  {
+    "id": "event_bus",
+    "dir": "16_event_bus",
+    "tier": 6,
+    "title": "Unsubscribed handler still fires (and order is wrong)",
+    "entrypoint": "EventBus",
+    "entry_module": "bus",
+    "files": [
+      "bus.py",
+      "registry.py"
+    ],
+    "editable": [
+      "bus.py",
+      "registry.py"
+    ],
+    "spec": "An EventBus lets you subscribe(topic, handler) -> token, publish(topic, payload) which calls every current handler in subscription order and returns their results, and unsubscribe(token) which must stop that exact handler from firing (other handlers, even on the same topic, are unaffected). Failing: subscribe two handlers to a topic, unsubscribe the first, then publish \u2014 only the second handler should run, but both do."
+  },
+  {
+    "id": "paginate",
+    "dir": "17_paginate",
+    "tier": 6,
+    "title": "Last page of results is dropped",
+    "entrypoint": "paginate",
+    "entry_module": "service",
+    "files": [
+      "page_math.py",
+      "service.py"
+    ],
+    "editable": [
+      "service.py",
+      "page_math.py"
+    ],
+    "spec": "paginate(items, page, per_page) returns {'items','page','pages','total'} for a 1-based page. 'pages' is the total number of pages needed to show every item, INCLUDING a short final page. Failing: paginate(list(range(13)), 3, 5) should report pages=3 and items=[10,11,12], but it reports pages=2 and an empty final page."
   }
 ]

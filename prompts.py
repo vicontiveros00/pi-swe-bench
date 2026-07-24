@@ -17,16 +17,33 @@ model-agnostic so the only thing that differs between models is the model.
 GUIDANCE_LEVELS = ("auto", "standard", "guided")
 
 # Shared behavioural footer: the edit->run->iterate loop plus "don't hang on a
-# question", which matter a lot for small models in headless mode.
-_FOOTER = (
+# question", which matter a lot for small models in headless mode. The editable
+# surface is parameterized so multi-file (tier 6) tasks name their whole repo
+# instead of a single solution.py.
+_FOOTER_SINGLE = (
     "Edit only `solution.py`. After each change, run `python test_public.py` and "
     "keep going until it prints `PASS`. Do not ask questions \u2014 make your best "
     "attempt. When the test passes, stop."
 )
 
+_FOOTER_MULTI = (
+    "The bug may be in any of these files, and the symptom may surface far from "
+    "its cause: {files}. Read them, find the real cause, and fix it there \u2014 do "
+    "not merely patch the symptom or special-case the visible input. After each "
+    "change, run `python test_public.py` and keep going until it prints `PASS`. "
+    "Do not ask questions \u2014 make your best attempt. When the test passes, stop."
+)
+
+
+def _footer(editable):
+    """Single-file tasks get the classic footer; multi-file tasks list their repo."""
+    if editable and (len(editable) > 1 or editable[0] != "solution.py"):
+        return _FOOTER_MULTI.format(files=", ".join(f"`{f}`" for f in editable))
+    return _FOOTER_SINGLE
+
 _AUTO = """# Failing tests
 
-The tests in this project are failing because of a bug in `solution.py`.
+The tests in this project are failing because of a bug in the code.
 Find the cause and fix it. {footer}
 """
 
@@ -51,13 +68,19 @@ Fix `{entrypoint}` so the tests pass. {footer}
 """
 
 
-def build_prompt(guidance, title, spec, entrypoint):
-    """Return the task prompt for the given guidance level."""
+def build_prompt(guidance, title, spec, entrypoint, editable=None):
+    """Return the task prompt for the given guidance level.
+
+    `editable` is the list of files the agent may edit. For single-file tasks it
+    defaults to ['solution.py']; passing a multi-file list switches the footer to
+    the multi-file variant (names the repo, warns cause != symptom).
+    """
     if guidance not in GUIDANCE_LEVELS:
         raise ValueError(f"unknown guidance {guidance!r}; expected one of {GUIDANCE_LEVELS}")
     spec = spec.strip()
+    footer = _footer(editable or ["solution.py"])
     if guidance == "auto":
-        return _AUTO.format(footer=_FOOTER)
+        return _AUTO.format(footer=footer)
     if guidance == "guided":
-        return _GUIDED.format(title=title, spec=spec, entrypoint=entrypoint, footer=_FOOTER)
-    return _STANDARD.format(title=title, spec=spec, footer=_FOOTER)
+        return _GUIDED.format(title=title, spec=spec, entrypoint=entrypoint, footer=footer)
+    return _STANDARD.format(title=title, spec=spec, footer=footer)

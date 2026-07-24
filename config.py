@@ -25,6 +25,26 @@ PI_API_KEY = "lmstudio"
 # Print mode (non-interactive), ephemeral session, auto-trust the project dir.
 PI_BASE_ARGS = ["-p", "--no-session", "-a"]
 
+# --- sampling params ------------------------------------------------------
+# Pi exposes no CLI flag for these; sampling.js (loaded via -e) stamps them onto
+# every provider request through the before_provider_request hook. Set to None to
+# leave a param at the provider/LM Studio default. These mirror a real agentic
+# setup so the benchmark measures the model as you actually run it. Recorded in
+# each run's metadata for reproducibility.
+SAMPLING = {
+    "temperature": 0.0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "min_p": 0.05,
+    "presence_penalty": 1.5,
+    "repeat_penalty": 1.0,
+}
+
+# Path to the extension that applies SAMPLING. Set to None to disable and fall
+# back entirely to LM Studio's server-side defaults.
+import os as _os
+SAMPLING_EXTENSION = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "sampling.js")
+
 PI_TIMEOUT = 120        # seconds per task attempt (the agent may iterate)
 PREFLIGHT_TIMEOUT = 120 # seconds for the preflight probe (may JIT-load the model)
 
@@ -38,14 +58,11 @@ LMSTUDIO_URL = "http://172.20.10.7:1234"
 # `pi_model` = provider-prefixed id EXACTLY as it works with `pi --model`.
 # `name`     = short label used in the report and results dir.
 MODELS = [
+    {"name": "google/gemma-4-26b-a4b", "pi_model": "lmstudio/google/gemma-4-26b-a4b"},
     {"name": "gpt-oss-20b", "pi_model": "lmstudio/gpt-oss-20b"},
-    # {"name": "qwen3.5-9b",  "pi_model": "lmstudio/qwen/qwen3.5-9b"},
-    # {"name": "gemma-4-e2b",  "pi_model": "lmstudio/gemma-4-e2b-it"},
-    # {"name": "deepseek-coder-v2-lite",  "pi_model": "lmstudio/deepseek-coder-v2-lite-instruct-awq"},
-    # {"name": "devstral-small-2-2512",  "pi_model": "lmstudio/mistralai/devstral-small-2-2512"},
-    {"name": "qwythos-9b-claude-mythos-5-1m",  "pi_model": "lmstudio/qwythos-9b-claude-mythos-5-1m"},
+    {"name": "qwen/qwen3.5-9b", "pi_model": "lmstudio/qwen/qwen3.5-9b"},
 ]
 
 # --- run / grading --------------------------------------------------------
 SAMPLES = 1          # attempts per task; raise for a stabler pass@1 estimate
-GRADE_TIMEOUT = 20   # seconds for the hidden test to run
+GRADE_TIMEOUT = 20   # seconds for the hidden test to run 

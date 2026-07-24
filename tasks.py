@@ -5,13 +5,24 @@ hidden check set, so a model can't win by special-casing the shown input.
 
 Fields:
   name       - short id
-  tier       - 1 surface .. 5 algorithmic
+  tier       - 1 surface .. 5 algorithmic .. 6 multi-file diagnosis
   title      - human label
   entrypoint - the symbol the model must (re)define
   buggy      - code shown to the model
   spec       - intended behaviour + the one failing example
   check      - hidden assertions run against `mod` (the model's solution)
   reference  - a known-correct fix, used ONLY by validate.py
+
+Multi-file tasks (tier 6) use these instead of buggy/reference:
+  files          - {filename: source} for the whole starter repo (buggy state)
+  reference_files- {filename: source} the known-good repo (validate.py only)
+  editable       - list of filenames the agent is allowed to edit (informational;
+                   the grader only cares about final repo state)
+  entry_module   - the module the tests import (default "solution"); its .py is
+                   what test_public/test_hidden do `import <entry_module>` on
+A single-file task is just sugar for files={entry_module+".py": buggy} and
+reference_files={entry_module+".py": reference}; the generator normalizes both
+shapes to `files`, so downstream code only deals with file dicts.
 """
 
 TASKS = [
@@ -468,5 +479,406 @@ def roman_to_int(s):
             total += vals[ch]
     return total
 ''',
+    },
+
+    # ---------------- Tier 6: multi-file diagnosis ----------------
+    # These are the tie-breakers. The SYMPTOM (what the public test shows) lives
+    # in a different file from the CAUSE. The tempting one-line patch at the
+    # symptom site passes test_public but fails the wider hidden set, which only
+    # a fix at the true cause satisfies. Meant to be run at --guidance auto
+    # (no bug report), so the model must reproduce -> localize -> fix.
+    {
+        "name": "cart_totals", "tier": 6,
+        "title": "Cart total is wrong after applying a coupon",
+        "entrypoint": "Cart",
+        "entry_module": "cart",
+        "editable": ["cart.py", "pricing.py"],
+        "files": {
+            "pricing.py": '''
+# Money is handled in integer cents everywhere to avoid float drift.
+
+def to_cents(dollars):
+    # dollars may be int or float like 19.99
+    return int(round(dollars * 100))
+
+
+def apply_percent_off(cents, percent):
+    # percent is an int 0..100. Returns the DISCOUNTED price in cents.
+    # BUG: truncates toward zero, and rounds the discount instead of the price,
+    # so results drift by a cent on odd totals.
+    discount = int(cents * percent / 100)
+    return cents - discount
+
+
+def format_money(cents):
+    return "${:.2f}".format(cents / 100)
+''',
+            "cart.py": '''
+from pricing import to_cents, apply_percent_off, format_money
+
+
+class Cart:
+    def __init__(self):
+        self._items = []          # list of (name, unit_cents, qty)
+        self._percent_off = 0
+
+    def add(self, name, unit_price, qty=1):
+        self._items.append((name, to_cents(unit_price), qty))
+
+    def apply_coupon(self, percent):
+        self._percent_off = percent
+
+    def subtotal_cents(self):
+        return sum(unit * qty for _, unit, qty in self._items)
+
+    def total_cents(self):
+        sub = self.subtotal_cents()
+        if self._percent_off:
+            return apply_percent_off(sub, self._percent_off)
+        return sub
+
+    def total(self):
+        return format_money(self.total_cents())
+''',
+        },
+        "spec": "A Cart holds items priced in dollars and can apply a whole-percent "
+                "coupon. total_cents() must equal the subtotal minus a coupon discount "
+                "that is rounded HALF-UP to the nearest cent (standard retail rounding), "
+                "never truncated. Failing: a cart with one item at $19.99 and a 10% coupon "
+                "should total 1799 cents ($17.99) \u2014 discount 199.9\u2192200 cents rounded "
+                "half-up \u2014 but it returns 1800.",
+        "check": '''
+import cart as C
+
+# one item, 10% off: 1999c, discount 199.9 -> 200 (half-up) -> 1799
+c = C.Cart()
+c.add("widget", 19.99)
+c.apply_coupon(10)
+assert c.total_cents() == 1799, c.total_cents()
+assert c.total() == "$17.99"
+
+# no coupon -> exact subtotal
+c = C.Cart()
+c.add("a", 10.00, 2)
+c.add("b", 5.55)
+assert c.total_cents() == 2555
+
+# discount rounds half-up: 3333c * 15% = 499.95 -> 500 -> 2833
+c = C.Cart()
+c.add("x", 33.33)
+c.apply_coupon(15)
+assert c.total_cents() == 2833, c.total_cents()
+
+# 100% off is free; 0% off is a no-op
+c = C.Cart(); c.add("y", 12.34); c.apply_coupon(100)
+assert c.total_cents() == 0
+c = C.Cart(); c.add("z", 12.34); c.apply_coupon(0)
+assert c.total_cents() == 1234
+
+# exact-half boundary rounds up: 2000c * 25% = 500.0 -> 500 -> 1500
+c = C.Cart(); c.add("h", 20.00); c.apply_coupon(25)
+assert c.total_cents() == 1500
+
+# HALF-UP the DISCOUNT, not banker's and not "round the kept price".
+# $3.30 @ 25%: discount 82.5 -> half-up 83 -> total 247.
+# Banker's discount = 82 -> 248; rounding the kept price (247.5) -> 248 too.
+# So only rounding the DISCOUNT half-up yields 247.
+c = C.Cart(); c.add("hu1", 3.30); c.apply_coupon(25)
+assert c.total_cents() == 247, c.total_cents()
+
+# $10.10 @ 25%: discount 252.5 -> half-up 253 -> total 757
+# (banker's / price-rounding both give 758).
+c = C.Cart(); c.add("hu2", 10.10); c.apply_coupon(25)
+assert c.total_cents() == 757, c.total_cents()
+
+# quantities and coupon together: (1001*3)=3003, 33% -> 990.99 -> 991 -> 2012
+c = C.Cart(); c.add("q", 10.01, 3); c.apply_coupon(33)
+assert c.total_cents() == 2012, c.total_cents()
+''',
+        "reference_files": {
+            "pricing.py": '''
+import math
+
+
+def to_cents(dollars):
+    return int(round(dollars * 100))
+
+
+def apply_percent_off(cents, percent):
+    # round the DISCOUNT half-up, then subtract, so the price is exact to the cent
+    discount = math.floor(cents * percent / 100 + 0.5)
+    return cents - discount
+
+
+def format_money(cents):
+    return "${:.2f}".format(cents / 100)
+''',
+            "cart.py": '''
+from pricing import to_cents, apply_percent_off, format_money
+
+
+class Cart:
+    def __init__(self):
+        self._items = []
+        self._percent_off = 0
+
+    def add(self, name, unit_price, qty=1):
+        self._items.append((name, to_cents(unit_price), qty))
+
+    def apply_coupon(self, percent):
+        self._percent_off = percent
+
+    def subtotal_cents(self):
+        return sum(unit * qty for _, unit, qty in self._items)
+
+    def total_cents(self):
+        sub = self.subtotal_cents()
+        if self._percent_off:
+            return apply_percent_off(sub, self._percent_off)
+        return sub
+
+    def total(self):
+        return format_money(self.total_cents())
+''',
+        },
+    },
+    {
+        "name": "event_bus", "tier": 6,
+        "title": "Unsubscribed handler still fires (and order is wrong)",
+        "entrypoint": "EventBus",
+        "entry_module": "bus",
+        "editable": ["bus.py", "registry.py"],
+        "files": {
+            "registry.py": '''
+# Tracks handlers per topic, preserving subscription order.
+
+class Registry:
+    def __init__(self):
+        self._by_topic = {}   # topic -> list of (token, handler)
+        self._next = 1
+
+    def add(self, topic, handler):
+        token = self._next
+        self._next += 1
+        self._by_topic.setdefault(topic, []).append((token, handler))
+        return token
+
+    def remove(self, token):
+        # BUG: only removes from the FIRST topic that has a matching token and
+        # then keeps scanning, but compares token to the handler tuple, so it
+        # never actually matches -> nothing is ever removed.
+        for topic, entries in self._by_topic.items():
+            for e in entries:
+                if e == token:
+                    entries.remove(e)
+
+    def handlers(self, topic):
+        return [h for _, h in self._by_topic.get(topic, [])]
+''',
+            "bus.py": '''
+from registry import Registry
+
+
+class EventBus:
+    def __init__(self):
+        self._reg = Registry()
+
+    def subscribe(self, topic, handler):
+        return self._reg.add(topic, handler)
+
+    def unsubscribe(self, token):
+        self._reg.remove(token)
+
+    def publish(self, topic, payload):
+        # call each subscribed handler in subscription order; collect results
+        results = []
+        for h in self._reg.handlers(topic):
+            results.append(h(payload))
+        return results
+''',
+        },
+        "spec": "An EventBus lets you subscribe(topic, handler) -> token, publish(topic, "
+                "payload) which calls every current handler in subscription order and "
+                "returns their results, and unsubscribe(token) which must stop that "
+                "exact handler from firing (other handlers, even on the same topic, are "
+                "unaffected). Failing: subscribe two handlers to a topic, unsubscribe the "
+                "first, then publish \u2014 only the second handler should run, but both do.",
+        "check": '''
+import bus as B
+
+calls = []
+bus = B.EventBus()
+t1 = bus.subscribe("n", lambda p: calls.append(("a", p)) or "a")
+t2 = bus.subscribe("n", lambda p: calls.append(("b", p)) or "b")
+
+# order preserved, both fire
+assert bus.publish("n", 1) == ["a", "b"]
+assert calls == [("a", 1), ("b", 1)]
+
+# unsubscribe the FIRST; only the second may fire now
+calls.clear()
+bus.unsubscribe(t1)
+assert bus.publish("n", 2) == ["b"]
+assert calls == [("b", 2)]
+
+# unsubscribing an unknown/already-removed token is a harmless no-op
+bus.unsubscribe(t1)
+bus.unsubscribe(9999)
+assert bus.publish("n", 3) == ["b"]
+
+# topics are isolated; a token only removes its own handler
+bus2 = B.EventBus()
+x = bus2.subscribe("x", lambda p: "x")
+y = bus2.subscribe("y", lambda p: "y")
+bus2.unsubscribe(x)
+assert bus2.publish("x", 0) == []
+assert bus2.publish("y", 0) == ["y"]
+
+# re-subscribing after removal restores firing, in new subscription order
+z = bus.subscribe("n", lambda p: "c")
+assert bus.publish("n", 4) == ["b", "c"]
+''',
+        "reference_files": {
+            "registry.py": '''
+class Registry:
+    def __init__(self):
+        self._by_topic = {}
+        self._next = 1
+
+    def add(self, topic, handler):
+        token = self._next
+        self._next += 1
+        self._by_topic.setdefault(topic, []).append((token, handler))
+        return token
+
+    def remove(self, token):
+        for topic, entries in self._by_topic.items():
+            self._by_topic[topic] = [(t, h) for (t, h) in entries if t != token]
+
+    def handlers(self, topic):
+        return [h for _, h in self._by_topic.get(topic, [])]
+''',
+            "bus.py": '''
+from registry import Registry
+
+
+class EventBus:
+    def __init__(self):
+        self._reg = Registry()
+
+    def subscribe(self, topic, handler):
+        return self._reg.add(topic, handler)
+
+    def unsubscribe(self, token):
+        self._reg.remove(token)
+
+    def publish(self, topic, payload):
+        results = []
+        for h in self._reg.handlers(topic):
+            results.append(h(payload))
+        return results
+''',
+        },
+    },
+    {
+        "name": "paginate", "tier": 6,
+        "title": "Last page of results is dropped",
+        "entrypoint": "paginate",
+        "entry_module": "service",
+        "editable": ["service.py", "page_math.py"],
+        "files": {
+            "page_math.py": '''
+# Pure pagination arithmetic, shared by several services.
+
+def page_count(total, per_page):
+    # number of pages needed to show `total` items, `per_page` per page.
+    # BUG: integer division floors, so a partial final page is lost
+    # (13 items / 5 per page -> 2, but you need 3).
+    return total // per_page
+
+
+def slice_bounds(page, per_page):
+    # (start, end) indices for a 1-based page number.
+    start = (page - 1) * per_page
+    return start, start + per_page
+''',
+            "service.py": '''
+from page_math import page_count, slice_bounds
+
+
+def paginate(items, page, per_page):
+    \"\"\"Return a dict describing one page of `items`.
+
+    {"items": [...], "page": p, "pages": total_pages, "total": n}
+    Pages are 1-based. Out-of-range pages yield an empty item list but still
+    report the correct total page count. per_page is assumed >= 1.
+    \"\"\"
+    n = len(items)
+    pages = page_count(n, per_page)
+    start, end = slice_bounds(page, per_page)
+    return {"items": items[start:end], "page": page, "pages": pages, "total": n}
+''',
+        },
+        "spec": "paginate(items, page, per_page) returns {'items','page','pages','total'} "
+                "for a 1-based page. 'pages' is the total number of pages needed to show "
+                "every item, INCLUDING a short final page. Failing: paginate(list(range(13)), "
+                "3, 5) should report pages=3 and items=[10,11,12], but it reports pages=2 "
+                "and an empty final page.",
+        "check": '''
+import service as S
+
+r = S.paginate(list(range(13)), 3, 5)
+assert r["pages"] == 3, r["pages"]
+assert r["items"] == [10, 11, 12]
+assert r["page"] == 3 and r["total"] == 13
+
+# exact multiple: 10 items / 5 -> exactly 2 pages, no phantom 3rd
+r = S.paginate(list(range(10)), 2, 5)
+assert r["pages"] == 2
+assert r["items"] == [5, 6, 7, 8, 9]
+
+# first page
+r = S.paginate(list(range(13)), 1, 5)
+assert r["items"] == [0, 1, 2, 3, 4] and r["pages"] == 3
+
+# out-of-range page: empty items, but page count still correct
+r = S.paginate(list(range(13)), 4, 5)
+assert r["items"] == [] and r["pages"] == 3
+
+# empty input -> zero pages, empty page
+r = S.paginate([], 1, 5)
+assert r["items"] == [] and r["pages"] == 0 and r["total"] == 0
+
+# single short page
+r = S.paginate([1, 2, 3], 1, 10)
+assert r["items"] == [1, 2, 3] and r["pages"] == 1
+''',
+        "reference_files": {
+            "page_math.py": '''
+def page_count(total, per_page):
+    return (total + per_page - 1) // per_page
+
+
+def slice_bounds(page, per_page):
+    start = (page - 1) * per_page
+    return start, start + per_page
+''',
+            "service.py": '''
+from page_math import page_count, slice_bounds
+
+
+def paginate(items, page, per_page):
+    \"\"\"Return a dict describing one page of `items`.
+
+    {"items": [...], "page": p, "pages": total_pages, "total": n}
+    Pages are 1-based. Out-of-range pages yield an empty item list but still
+    report the correct total page count. per_page is assumed >= 1.
+    \"\"\"
+    n = len(items)
+    pages = page_count(n, per_page)
+    start, end = slice_bounds(page, per_page)
+    return {"items": items[start:end], "page": page, "pages": pages, "total": n}
+''',
+        },
     },
 ]
